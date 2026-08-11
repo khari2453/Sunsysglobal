@@ -35,7 +35,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: backend
-          image: sunsys-backend:latest
+          image: sunsys.example.com:18443/sunsys/resume-tailor-backend:latest
           ports:
             - containerPort: 5000
               protocol: TCP
@@ -122,7 +122,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: frontend
-          image: sunsys-frontend:latest
+          image: sunsys.example.com:18443/sunsys/resume-tailor-frontend:latest
           ports:
             - containerPort: 8080
               protocol: TCP
