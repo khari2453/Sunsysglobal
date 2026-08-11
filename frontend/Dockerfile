@@ -9,6 +9,8 @@ RUN npm ci
 # Copy source and build
 COPY . .
 ENV NODE_ENV=production
+# Ensure files and node binaries are executable to avoid permission errors
+RUN chmod -R a+rx /app && [ -d node_modules/.bin ] && chmod -R a+rx node_modules/.bin || true
 RUN npm run build
 
 FROM nginx:1.31.3-alpine
