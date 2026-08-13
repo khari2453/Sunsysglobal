@@ -1,25 +1,33 @@
-FROM node:18-alpine AS build
+# Build stage
+FROM node:18 AS build
 
 WORKDIR /app
 
-# Install dependencies (use npm ci for reproducible installs)
+# Copy package files
 COPY package*.json ./
-RUN npm ci
+COPY package-lock.json* ./
 
-# Copy source and build
+# Install dependencies (all deps needed for build)
+RUN npm install
+
+# Copy source code
 COPY . .
+
+# Build the application
 ENV NODE_ENV=production
-# Ensure files and node binaries are executable to avoid permission errors
-RUN chmod -R a+rx /app && [ -d node_modules/.bin ] && chmod -R a+rx node_modules/.bin || true
 RUN npm run build
 
+# Runtime stage
 FROM nginx:1.31.3-alpine
 
 # Copy built assets from builder
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Use a custom nginx config to support SPA routing
+# Copy nginx configuration for SPA routing
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Expose port
 EXPOSE 80
+
+# Start nginx
 CMD ["nginx", "-g", "daemon off;"]
