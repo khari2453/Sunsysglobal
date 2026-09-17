@@ -1,0 +1,177 @@
+
+pipeline {
+    agent any
+    environment {
+        BACKEND_IMAGE = "harikumar1997/sunsysglobal-backend"
+        FRONTEND_IMAGE = "harikumar1997/sunsysglobal-frontend"
+        IMAGE_TAG = "latest"
+    }
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/khari2453/Sunsysglobal.git'
+            }
+        }
+
+        stage('Check Node and NPM') {
+            steps {
+                sh '''
+                    node --version
+                    npm --version
+                '''
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                dir('frontend') {
+                    sh '''
+                rm -rf node_modules
+                npm install
+                chmod +x node_modules/.bin/vite
+            '''
+                }
+            }
+        }
+
+         stage('Build Frontend') {
+            steps {
+                dir('frontend') {
+                    sh 'npm run build'
+                }
+            }
+        }
+        stage('Build Backend') {
+            steps {
+                dir('backend') {        
+                sh '''
+            docker run --rm \
+                -v "$WORKSPACE/backend:/app" \
+                -w /app \
+                python:3.11-slim \
+                bash -c '
+                    if [ -f requirements.txt ]; then
+                        python -m pip install --no-cache-dir -r requirements.txt
+                    fi
+                '
+        '''
+                }
+            }
+        }
+        stage('SonarQube Analysis') {
+            steps {
+                    withSonarQubeEnv('sonarqube-server') {
+                        withEnv(["PATH+SONAR=${tool 'sonarqube-scanner'}/bin"]) {
+                           sh '''
+                                sonar-scanner \
+                                -Dsonar.projectKey=sunsys \
+                                -Dsonar.projectName=sunsys \
+                                -Dsonar.sources=backend,frontend
+                              '''  
+
+                        }
+            }
+        }
+        }
+        stage('Quality Gate') {
+            steps {
+
+                timeout(time: 5, unit: 'MINUTES') {
+
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        stage('Build Backend Docker Image') {
+            steps {
+
+                sh """
+                    docker build \
+                    -t ${BACKEND_IMAGE}:${IMAGE_TAG} \
+                    -t ${BACKEND_IMAGE}:latest \
+                    ./backend
+                """
+            }
+        }
+
+
+        stage('Build Frontend Docker Image') {
+            steps {
+
+                sh """
+                    docker build \
+                    -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
+                    -t ${FRONTEND_IMAGE}:latest \
+                    ./frontend
+                """
+            }
+        }
+        stage('Trivy Image Scan') {
+            
+            steps {
+         sh """
+                    trivy image \
+                    --severity HIGH,CRITICAL \
+                    --exit-code 0 \
+                    ${BACKEND_IMAGE}:${IMAGE_TAG}
+
+                    trivy image \
+                    --severity HIGH,CRITICAL \
+                    --exit-code 0 \
+                    ${FRONTEND_IMAGE}:${IMAGE_TAG}
+                """
+            }
+        }
+        stage('Docker Login') {
+            steps {
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+
+                    sh '''
+                        echo "$DOCKER_PASSWORD" | \
+                        docker login -u "$DOCKER_USER" --password-stdin
+                    '''
+                }
+            }
+        }
+
+
+        stage('Push Docker Images') {
+            steps {
+
+                sh """
+                    docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
+                    docker push ${BACKEND_IMAGE}:latest
+
+                    docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
+                    docker push ${FRONTEND_IMAGE}:latest
+                """
+            }
+        }
+
+
+
+        
+    }
+    
+
+    post {
+        success {
+            echo 'React frontend build completed successfully!'
+        }
+
+        failure {
+            echo 'React frontend build failed!'
+        }
+    }
+
+
+}
