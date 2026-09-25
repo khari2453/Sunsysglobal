@@ -81,7 +81,7 @@ export default function App() {
     formData.append('jd_text', jdText);
 
     try {
-      const response = await fetch('http://0.0.0.0:8000/api/tailor', {
+      const response = await fetch('http://100.53.203.102:8000/api/tailor', {
         method: 'POST',
         body: formData,
       });
@@ -126,7 +126,7 @@ export default function App() {
     formData.append('jd_text', jdText);
 
     try {
-      const response = await fetch('http://0.0.0.0:8000/api/interview-prep', {
+      const response = await fetch('http://100.53.203.102:8000/api/interview-prep', {
         method: 'POST',
         body: formData,
       });
