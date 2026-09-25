@@ -26,7 +26,7 @@ A AI resume matcher platform built with a 2-tier architecture — React frontend
 
 
 
-
+https://mail.google.com/mail/u/0?ui=2&ik=ee93ae9296&attid=0.1&permmsgid=msg-a:r8602438544460613843&view=fimg&fur=ip&permmsgid=msg-a:r8602438544460613843&sz=s0-l75-ft&attbid=ANGjdJ_QjIQ6T9cLc_PjNxEVyLk_de6LFHFOPvz-dEiVeGSOmVrMJ6MhW_QMjmPZxFgc65fDEWxXeDS_JreYnS9S88fRbU5XyGX0OQOZSIftLfGyaRhfn8kN5KIifi0&disp=emb&realattid=ii_mtvu62gk0&zw
 
     1  groups
     2  docker run -d --name sonar -p 9000:9000 sonarqube:lts-community
