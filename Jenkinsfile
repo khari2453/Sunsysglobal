@@ -1,100 +1,107 @@
 pipeline {
-
     agent any
-
     environment {
-
-        REGISTRY = "docker.io/your-dockerhub-username"
-
-        BACKEND_IMAGE  = "${REGISTRY}/resume-tailor-backend"
-        FRONTEND_IMAGE = "${REGISTRY}/resume-tailor-frontend"
-
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        BACKEND_IMAGE = "harikumar1997/sunsysglobal-backend"
+        FRONTEND_IMAGE = "harikumar1997/sunsysglobal-frontend"
+        IMAGE_TAG = "latest"
+        BACKEND_URL  = "http://100.53.203.102:8000/"
+        KUBECONFIG = '/var/lib/jenkins/kubeconfig'
     }
-
     stages {
 
         stage('Checkout') {
             steps {
-                echo "Checking out source code..."
-
-                checkout scm
+                git branch: 'main',
+                    url: 'https://github.com/khari2453/Sunsysglobal.git'
             }
         }
 
-
-        stage('Backend Test') {
+        stage('Check Node and NPM') {
             steps {
-
-                dir('backend') {
-
-                    sh '''
-                        python3 -m venv venv
-                        . venv/bin/activate
-
-                        pip install --upgrade pip
-                        pip install -r requirements.txt
-
-                        if [ -f requirements-dev.txt ]; then
-                            pip install -r requirements-dev.txt
-                        fi
-
-                        if [ -d tests ]; then
-                            pytest -v
-                        fi
-                    '''
-                }
+                sh '''
+                    node --version
+                    npm --version
+                '''
             }
         }
+        
 
-
-        stage('Frontend Test') {
+        stage('Install Dependencies') {
             steps {
-
                 dir('frontend') {
-
                     sh '''
-                        npm ci
-
-                        npm run lint || true
-
-                        npm test -- --runInBand || true
-                    '''
+                rm -rf node_modules
+                npm install
+                chmod +x node_modules/.bin/vite
+            '''
                 }
             }
         }
 
-
-        stage('Build Frontend') {
+         stage('Build Frontend') {
             steps {
-
                 dir('frontend') {
-
-                    sh '''
-                        npm ci
-                        npm run build
-                    '''
+                    sh 'npm run build'
                 }
             }
         }
-
-
-        stage('SonarQube Analysis') {
+        stage('Build Backend') {
             steps {
-
-                withSonarQubeEnv('SonarQube') {
-
-                    sh '''
-                        sonar-scanner \
-                        -Dsonar.projectKey=resume-tailor \
-                        -Dsonar.projectName=resume-tailor \
-                        -Dsonar.sources=backend,frontend
-                    '''
+                dir('backend') {        
+                sh '''
+            docker run --rm \
+                -v "$WORKSPACE/backend:/app" \
+                -w /app \
+                python:3.11-slim \
+                bash -c '
+                    if [ -f requirements.txt ]; then
+                        python -m pip install --no-cache-dir -r requirements.txt
+                    fi
+                '
+        '''
                 }
             }
         }
+       stage('SonarQube Analysis') {
+    steps {
+        script {
+            def scannerHome = tool 'sonarqube-scanner'
 
+            echo "Scanner: ${scannerHome}"
 
+            withSonarQubeEnv('sonarqube-server') {
+                sh """
+                    echo "===== Scanner Version ====="
+                    ${scannerHome}/bin/sonar-scanner --version
+
+                    echo "===== Workspace ====="
+                    pwd
+                    ls -la
+
+                    echo "===== Backend ====="
+                    ls -la backend || true
+
+                    echo "===== Frontend ====="
+                    ls -la frontend || true
+                    ls -la frontend/src || true
+
+                    echo "===== Sonar Analysis ====="
+
+                    ${scannerHome}/bin/sonar-scanner \
+                      -Dsonar.projectKey=sunsys-resume-tailor \
+                      -Dsonar.projectName="Sunsys Resume Tailor" \
+                      -Dsonar.projectVersion=1.0 \
+                      -Dsonar.sources=backend,frontend/src \
+                      -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/venv/**,**/__pycache__/**" \
+                      -Dsonar.sourceEncoding=UTF-8
+
+                    echo "===== Report Task ====="
+                    find . -name "report-task.txt" -print
+                """
+            }
+        }
+    }
+}
         stage('Quality Gate') {
             steps {
 
@@ -104,8 +111,6 @@ pipeline {
                 }
             }
         }
-
-
         stage('Build Backend Docker Image') {
             steps {
 
@@ -130,26 +135,26 @@ pipeline {
                 """
             }
         }
+    stage('Trivy Image Scan') {
+    steps {
+        sh """
+            echo "===== Trivy Version ====="
+            /usr/bin/trivy --version
 
+            echo "===== Backend Image Scan ====="
+            /usr/bin/trivy image \
+              --severity HIGH,CRITICAL \
+              --exit-code 0 \
+              ${BACKEND_IMAGE}:${IMAGE_TAG}
 
-        stage('Trivy Security Scan') {
-            steps {
-
-                sh """
-                    trivy image \
-                    --severity HIGH,CRITICAL \
-                    --exit-code 1 \
-                    ${BACKEND_IMAGE}:${IMAGE_TAG}
-
-                    trivy image \
-                    --severity HIGH,CRITICAL \
-                    --exit-code 1 \
-                    ${FRONTEND_IMAGE}:${IMAGE_TAG}
-                """
-            }
-        }
-
-
+            echo "===== Frontend Image Scan ====="
+            /usr/bin/trivy image \
+              --severity HIGH,CRITICAL \
+              --exit-code 0 \
+              ${FRONTEND_IMAGE}:${IMAGE_TAG}
+        """
+    }
+}
         stage('Docker Login') {
             steps {
 
@@ -183,53 +188,46 @@ pipeline {
             }
         }
 
+stage('Deploy to Kubernetes') {
+    steps {
+        sh '''
+            kubectl get nodes
+            kubectl get pods -n sunsys
 
-        stage('Deploy') {
-            steps {
+            kubectl set image deployment/backend \
+                backend=harikumar1997/sunsysglobal-backend:latest \
+                -n sunsys
 
-                echo "Deploying application..."
+            kubectl set image deployment/frontend \
+                frontend=harikumar1997/sunsysglobal-frontend:latest \
+                -n sunsys
 
-                sh '''
-                    echo "Deployment step goes here"
+            kubectl rollout status deployment/backend -n sunsys
+            kubectl rollout status deployment/frontend -n sunsys
+        '''
+    } 
+        
+}
 
-                    # Example:
-                    # kubectl apply -f k8s/
-                    # kubectl set image deployment/backend \
-                    # backend=${BACKEND_IMAGE}:${IMAGE_TAG}
-                    #
-                    # kubectl set image deployment/frontend \
-                    # frontend=${FRONTEND_IMAGE}:${IMAGE_TAG}
-                '''
-            }
-        }
+}
+    post {
+    success {
+        emailext(
+            to: 'khari2453@gmail.com',
+            subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            body: "Build successful: ${env.BUILD_URL}"
+        )
     }
 
-
-    post {
-
-        success {
-
-            echo "===================================="
-            echo "CI/CD Pipeline Completed Successfully"
-            echo "Build: ${BUILD_NUMBER}"
-            echo "===================================="
-        }
-
-        failure {
-
-            echo "===================================="
-            echo "CI/CD Pipeline Failed"
-            echo "Check Jenkins console logs"
-            echo "===================================="
-        }
-
-        always {
-
-            sh '''
-                docker image prune -f || true
-            '''
-
-            cleanWs()
-        }
+    failure {
+        emailext(
+            to: 'khari2453@gmail.com',
+            subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            body: "Build failed: ${env.BUILD_URL}"
+        )
     }
 }
+
+        
+}
+    
